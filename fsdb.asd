@@ -1,4 +1,10 @@
 ; -*- mode: lisp -*-
+
+;; `get-db-wrapper-cell' split-sequence:split-sequence
+;; `db-contents'         cl-fad:list-directory
+;; `db-dir-p'            cl-fad:directory-pathname-p
+;; `db-dir-p'           cl-fad:directory-pathname-p
+
 (in-package #:cl-user)
 
 #-(or sbcl ccl)
@@ -24,6 +30,7 @@
      (:file "read-write-lock")
      (:file "file-locks")
      (:file "fsdb")
+     (:file "test")
      ))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

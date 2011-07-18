@@ -61,11 +61,13 @@
 ;;; Directories
 ;;;
 
+;; :NOTE The create-directory defined in file src/sbcl.lisp explicitly default the mode keyword with :MODE 511
 (defun create-directory (dir &key mode)
   (if mode
       (ccl:create-directory dir :mode mode)
       (ccl:create-directory dir)))
 
+;; currently unused
 (defun recursive-delete-directory (path &rest rest &key if-does-not-exist)
   (declare (ignore if-does-not-exist))
   (apply #'ccl::recursive-delete-directory path rest))

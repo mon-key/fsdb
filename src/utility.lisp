@@ -7,9 +7,15 @@
 
 (in-package :fsdb)
 
+(defun file-namestring-or-last-directory (path)
+  (if (or (pathname-name path) (pathname-type path))
+      (file-namestring path)
+      (car (last (pathname-directory path)))))
+
 (defun file-get-contents (file)
   (with-open-file (stream file
                           :if-does-not-exist nil
+                          ;; :external-format (or  #+sbcl sb-impl::*default-external-format* :utf-8)
                           :external-format :utf-8)
     (when stream
       (let* ((len (file-length stream))
@@ -22,9 +28,16 @@
                           :direction :output
                           :if-exists :supersede
                           :if-does-not-exist :create
+                          ;; :external-format (or  #+sbcl sb-impl::*default-external-format* :utf-8)
                           :external-format :utf-8)
     (write-sequence contents stream)
     contents))
+
+;; :MOVED from :FILE src/fsdb.lisp
+(defun normalize-key (key)
+  (if (eql (aref key 0) #\/)
+      (subseq key 1)
+      key))
 
 (defparameter *whitespace* '(#\newline #\return #\tab #\space))
 
@@ -34,6 +47,7 @@
 (defun assocequal (item alist)
   (assoc item alist :test 'equal))
 
+;; Used for init binding of special variable `*dir-locks*' and with `get-inited-hash'
 (defun make-equal-hash (&rest keys-and-values)
   (let ((hash (make-hash-table :test 'equal)))
     (loop
@@ -43,10 +57,18 @@
          (setf (gethash key hash) value)))
     hash))
 
-(defun get-inited-hash (key hash &optional (creator #'make-equal-hash))
-  "Get an object from a hash table, creating it if it's not there."
-  (or (gethash key hash)
-      (setf (gethash key hash) (funcall creator))))
+;; `get-inited-hash' is not currently used directly by callers in fsdb system.
+;; It is however used wtih:
+;; truledger-client::spend-internal
+;; truledger-client::processinbox-internal
+;; truledger-client::init-server-accts
+;; truledger-client::handle-balance-msg 
+;; However, it also exported from :FILE truledger/src/utilities.lisp
+;;
+;; (defun get-inited-hash (key hash &optional (creator #'make-equal-hash))
+;;   "Get an object from a hash table, creating it if it's not there."
+;;   (or (gethash key hash)
+;;       (setf (gethash key hash) (funcall creator))))
 
 (defun strcat (&rest strings)
   "Concatenate a bunch of strings"

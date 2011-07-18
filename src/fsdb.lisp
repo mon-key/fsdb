@@ -2,25 +2,27 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
-;;; File System Database
+;;; FSDB -- File System Database
 ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (in-package :fsdb)
 
-;; All put/get database implementations should extend db
-(defclass db ()
+;; All put/get database implementations should extend class FSDB:BASE-FSDB.
+;; For example usage see Bill St. Clairs Truledger and Lisplog applications.
+(defclass base-fsdb ()
   ())
 
 (defun unimplemented-db-method (gf)
   (error "Unimplemented db method: ~s" gf))
 
 (defgeneric db-get (db key &rest more-keys)
-  (:method ((db db) key &rest more-keys)
+  (:method ((db base-fsdb) key &rest more-keys)
     (declare (ignore key more-keys))
     (unimplemented-db-method 'db-get)))
 
 (defgeneric (setf db-get) (value db key &rest more-keys)
-  (:method (value (db db) key &rest more-keys)
+  (:method (value (db base-fsdb) key &rest more-keys)
     (declare (ignore value key more-keys))
     (unimplemented-db-method '(setf db-get))))
 
@@ -28,27 +30,27 @@
   (setf (db-get db key) value))
 
 (defgeneric db-lock (db key)
-  (:method ((db db) key)
+  (:method ((db base-fsdb) key)
     (declare (ignore key))
     (unimplemented-db-method 'db-lock)))
 
 (defgeneric db-unlock (db lock)
-  (:method ((db db) lock)
+  (:method ((db base-fsdb) lock)
     (declare (ignore lock))
     (unimplemented-db-method 'db-unlock)))
 
 (defgeneric db-contents (db &rest keys)
-  (:method ((db db) &rest keys)
+  (:method ((db base-fsdb) &rest keys)
     (declare (ignore keys))
     (unimplemented-db-method 'db-contents)))
 
 (defgeneric db-subdir (db key)
-  (:method ((db db) key)
+  (:method ((db base-fsdb) key)
     (declare (ignore key))
     (unimplemented-db-method 'db-subdir)))
 
 (defgeneric db-dir-p (db &rest keys)
-  (:method ((db db) &rest keys)
+  (:method ((db base-fsdb) &rest keys)
     (declare (ignore keys))
     (unimplemented-db-method 'db-dir-p)))
 
@@ -57,10 +59,10 @@
 ;;;
 
 (defun make-fsdb (dir)
-  "Create an fsdb isstance for the given file system directory."
+  "Create instance of class FSDB for the given file system directory DIR."
   (make-instance 'fsdb :dir dir))
 
-(defclass fsdb (db)
+(defclass fsdb (base-fsdb)
   ((dir :initarg :dir
         :accessor fsdb-dir)))
 
@@ -68,6 +70,9 @@
   (print-unreadable-object (db stream :type t)
     (format stream "~s" (fsdb-dir db))))
 
+;; create-directory and ensure-directory-pathname :FILE src/sbcl.lisp
+;; create-directory and ensure-directory-pathname :FILE src/ccl.lisp
+;; :NOTE The `create-directory' in sbcl.lisp defaults with :MODE 511
 (defmethod initialize-instance :after ((db fsdb) &rest ignore)
   (declare (ignore ignore))
   (let ((dir (ensure-directory-pathname (fsdb-dir db))))
@@ -75,10 +80,11 @@
     (setq dir (remove-trailing-separator (namestring (truename (fsdb-dir db)))))
     (setf (fsdb-dir db) dir)))
 
-(defun normalize-key (key)
-  (if (eql (aref key 0) #\/)
-      (subseq key 1)
-      key))
+;; :MOVED to src/utility.lisp
+;; (defun normalize-key (key)
+;;   (if (eql (aref key 0) #\/)
+;;       (subseq key 1)
+;;       key))
 
 (defmethod db-filename ((db fsdb) key)
   (if (blankp key)
@@ -118,6 +124,12 @@
   (declare (dynamic-extent more-keys))
   (%append-db-keys key more-keys))
 
+;; :NOTE `db-get' invokes `file-get-contents'/`file-put-contents' both of which
+;; are currently default their stream-external-format with:
+;; :EXTERNAL-FORMAT :UTF-8 
+;;
+;; Are there any situtations where this isn't desirable? 
+;; Maybe an &allow-other-keys is applicable here???
 (defmethod db-get ((db fsdb) key &rest more-keys)
   (declare (dynamic-extent more-keys))
   (let ((key (%append-db-keys key more-keys)))
@@ -133,6 +145,12 @@
       (if (or (null value) (equal value ""))
           (when (probe-file filename) (delete-file filename))
           (file-put-contents filename value)))))
+
+(defmethod db-probe ((db fsdb) key &rest more-keys)
+  (declare (dynamic-extent more-keys))
+  (let ((key (%append-db-keys key more-keys)))
+    (with-fsdb-filename (db filename key)
+      (probe-file filename))))
 
 (defmethod db-lock ((db fsdb) key)
   (grab-file-lock (db-filename db key)))
@@ -152,15 +170,30 @@
          (funcall thunk)
       (db-unlock db lock))))
 
-(defun file-namestring-or-last-directory (path)
-  (if (or (pathname-name path) (pathname-type path))
-      (file-namestring path)
-      (car (last (pathname-directory path)))))
+;; :MOVED to :FILE src/utility.lisp
+;; (defun file-namestring-or-last-directory (path)
+;;   (if (or (pathname-name path) (pathname-type path))
+;;       (file-namestring path)
+;;       (car (last (pathname-directory path)))))
 
 (defmethod db-contents ((db fsdb) &rest keys)
-  (let* ((key (if keys
-                 (%append-db-keys (car keys) (append (cdr keys) '("*.*")))
-                 "*.*"))
+  (let* ((key 
+          ;; :NOTE The wildcard stuff prob. has to do with implementation portability around
+          ;; the use of CL-FAD:LIST-DIRECTORY w/r/t OpenMCL as opposed to SBCL.
+          ;;
+          ;; CL-FAD:LIST-DIRECTORY has the following reader conditionals:
+          ;;
+          ;;  #+(or :sbcl :cmu :scl :lispworks) (directory wildcard)
+          ;;  #+(or :openmcl :digitool) (directory wildcard :directories t)
+          ;;
+          ;; On SBCL we could prob. safely avoid the string frobbing business
+          ;; altogether by doing this:
+          ;;  (if keys (%append-db-keys (car keys) (cdr keys)) nil)
+          ;;
+          ;; :WAS (if keys (%append-db-keys (car keys) (append (cdr keys) '("*.*"))) "*.*")
+          (if keys (%append-db-keys (car keys) (append (cdr keys) '(""))) ""))
+         ;;
+         ;; (dir (cl-fad:list-directory (directory-namestring (db-filename db key))))
          (dir (cl-fad:list-directory (db-filename db key))))
     ;; DIRECTORY doesn't necessarily return sorted on FreeBSD
     (sort (mapcar 'file-namestring-or-last-directory dir) #'string-lessp)))
@@ -209,9 +242,11 @@
        (funcall thunk)
     (write-unlock-rwlock lock reading-p)))
 
-;; dir -> read-write-lock
+;; cl:equal hash-table mapping a directory to a read-write-lock
 (defvar *dir-locks*
   (make-equal-hash))
+;; This could likely be defined with:
+;; (make-equal-hash :test 'equal)
 
 (defvar *dir-locks-lock*
   (make-lock "*dir-locks-lock*"))
@@ -230,36 +265,37 @@
   `(with-write-locked-rwlock ((get-dir-lock (fsdb-dir ,fsdb)) ,reading-p)
      ,@body))
 
-(defun rwlock-test (&optional (iterations 3) (readers 5))
-  (let ((stop nil)
-        (lock (make-read-write-lock))
-        (stream *standard-output*))
-    (dotimes (i readers)
-      (process-run-function
-       (format nil "Reader ~s" i)
-       (lambda (cnt)
-         (loop
-            (with-read-locked-rwlock (lock)
-              (format stream "Start reader ~s~%" cnt)
-              (sleep 0.5)
-              (format stream "Stop reader ~s~%" cnt))
-            (when stop (return))))
-       i))
-    (unwind-protect
-         (dotimes (i iterations)
-           (sleep 0.1)
-           (with-read-locked-rwlock (lock)
-             (with-write-locked-rwlock (lock t)
-               (format t "Start writer~%")
-               (sleep 0.1)
-               (format t "Stop writer~%"))))
-      (setf stop t))))
+;; :MOVED to :FILE src/test.lisp
+;; (defun rwlock-test (&optional (iterations 3) (readers 5))
+;;   (let ((stop nil)
+;;         (lock (make-read-write-lock))
+;;         (stream *standard-output*))
+;;     (dotimes (i readers)
+;;       (process-run-function
+;;        (format nil "Reader ~s" i)
+;;        (lambda (cnt)
+;;          (loop
+;;             (with-read-locked-rwlock (lock)
+;;               (format stream "Start reader ~s~%" cnt)
+;;               (sleep 0.5)
+;;               (format stream "Stop reader ~s~%" cnt))
+;;             (when stop (return))))
+;;        i))
+;;     (unwind-protect
+;;          (dotimes (i iterations)
+;;            (sleep 0.1)
+;;            (with-read-locked-rwlock (lock)
+;;              (with-write-locked-rwlock (lock t)
+;;                (format t "Start writer~%")
+;;                (sleep 0.1)
+;;                (format t "Stop writer~%"))))
+;;       (setf stop t))))
 
 ;;;
 ;;; A wrapper for a db that saves writes until commit
 ;;;
 
-(defclass db-wrapper (db)
+(defclass db-wrapper (base-fsdb)
   ((db :initarg :db
        :accessor db-wrapper-db)
    (dirs :initform (list nil :dir)
