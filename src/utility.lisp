@@ -12,24 +12,24 @@
       (file-namestring path)
       (car (last (pathname-directory path)))))
 
-(defun file-get-contents (file)
+(defun file-get-contents (file &optional (external-format :default))
   (with-open-file (stream file
                           :if-does-not-exist nil
                           ;; :external-format (or  #+sbcl sb-impl::*default-external-format* :utf-8)
-                          :external-format :utf-8)
+                          :external-format external-format)
     (when stream
       (let* ((len (file-length stream))
              (s (make-string len)))
         (read-sequence s stream)
         s))))
 
-(defun file-put-contents (file contents)
+(defun file-put-contents (file contents &optional (external-format :default))
   (with-open-file (stream file
                           :direction :output
                           :if-exists :supersede
                           :if-does-not-exist :create
                           ;; :external-format (or  #+sbcl sb-impl::*default-external-format* :utf-8)
-                          :external-format :utf-8)
+                          :external-format external-format)
     (write-sequence contents stream)
     contents))
 

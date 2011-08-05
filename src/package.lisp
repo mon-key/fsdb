@@ -20,13 +20,14 @@
    #:make-semaphore
    #:signal-semaphore
    #:wait-on-semaphore
-
+   ;;
    ;; fsdb.lisp
    #:db
    #:make-fsdb
    #:fsdb
    #:db-put
    #:db-get
+   #:with-db-lock
    #:db-lock
    #:db-unlock
    #:db-contents
@@ -45,8 +46,38 @@
    #:commit-db-wrapper
    #:rollback-db-wrapper
    #:with-db-wrapper
-   ))
+   #:copy-db-wrapper
 
+   ;; :NOTE Bill St. Clair's FSDB exports the symbols below but we don't need
+   ;; them and they're likely to cause symbol clashes at some point so we leave
+   ;; them commented out for the time being.
+
+   ;; utility.lisp
+   ;; #:make-equal-hash
+   ;; #:*whitespace*
+   ;; #:strcat
+   ;; #:remove-trailing-separator
+   ;; #:blankp
+   ;; #:stringify
+   ;; #:trim
+   ;; #:file-get-contents
+   ;; #:file-put-contents
+   ;; #:dotcat
+   ;; #:assocequal
+   ;; #:str-replace
+   ;; #:strstr
+   ;; #:explode
+   ;; #:implode
+   ;; ;;;;;; #:get-inited-hash
+   ;; #:delq
+
+   ;; ccl.lisp & sbcl.lisp
+   ;; #:ensure-directory-pathname
+   ;; #:recursive-delete-directory
+   ;; #:process-wait
+   ;; #:process-run-function
+   ;; #:current-process
+   ))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;

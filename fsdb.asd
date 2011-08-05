@@ -3,7 +3,6 @@
 ;; `get-db-wrapper-cell' split-sequence:split-sequence
 ;; `db-contents'         cl-fad:list-directory
 ;; `db-dir-p'            cl-fad:directory-pathname-p
-;; `db-dir-p'           cl-fad:directory-pathname-p
 
 (in-package #:cl-user)
 

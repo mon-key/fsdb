@@ -58,13 +58,20 @@
 ;;; Implement the db protocol using the file system
 ;;;
 
-(defun make-fsdb (dir)
-  "Create instance of class FSDB for the given file system directory DIR."
-  (make-instance 'fsdb :dir dir))
+(defun make-fsdb (dir &key (external-format :default))
+  "Create instance of class FSDB for the given file system directory DIR.
+EXTERNAL-FORMAT identifies io format. Default is :default."
+  (make-instance 'fsdb 
+                 :dir dir 
+                 :external-format external-format))
+
 
 (defclass fsdb (base-fsdb)
   ((dir :initarg :dir
-        :accessor fsdb-dir)))
+        :accessor fsdb-dir)
+  (external-format :initarg :external-format
+                   :accessor fsdb-external-format
+                   :initform :default)))
 
 (defmethod print-object ((db fsdb) stream)
   (print-unreadable-object (db stream :type t)
@@ -134,7 +141,7 @@
   (declare (dynamic-extent more-keys))
   (let ((key (%append-db-keys key more-keys)))
     (with-fsdb-filename (db filename key)
-      (let ((res (file-get-contents filename)))
+      (let ((res (file-get-contents filename (fsdb-external-format db))))
         (and (not (equal "" res))
              res)))))
 
@@ -144,13 +151,7 @@
     (with-fsdb-filename (db filename key)
       (if (or (null value) (equal value ""))
           (when (probe-file filename) (delete-file filename))
-          (file-put-contents filename value)))))
-
-(defmethod db-probe ((db fsdb) key &rest more-keys)
-  (declare (dynamic-extent more-keys))
-  (let ((key (%append-db-keys key more-keys)))
-    (with-fsdb-filename (db filename key)
-      (probe-file filename))))
+          (file-put-contents filename value (fsdb-external-format db))))))
 
 (defmethod db-lock ((db fsdb) key)
   (grab-file-lock (db-filename db key)))
@@ -242,11 +243,10 @@
        (funcall thunk)
     (write-unlock-rwlock lock reading-p)))
 
-;; cl:equal hash-table mapping a directory to a read-write-lock
-(defvar *dir-locks*
-  (make-equal-hash))
 ;; This could likely be defined with:
-;; (make-equal-hash :test 'equal)
+;; (make-hash-table :test 'equal)
+(defvar *dir-locks* (make-equal-hash)
+  "A cl:equal hash-table mapping a directory to a read-write-lock.")
 
 (defvar *dir-locks-lock*
   (make-lock "*dir-locks-lock*"))
@@ -299,6 +299,7 @@
   ((db :initarg :db
        :accessor db-wrapper-db)
    (dirs :initform (list nil :dir)
+         :initarg :dirs
          :accessor db-wrapper-dirs)
    (locks :initform nil
           :accessor db-wrapper-locks)))
@@ -386,6 +387,12 @@
 (defun rollback-db-wrapper (db)
   (check-type db db-wrapper)
   (setf (db-wrapper-dirs db) (list nil :dir))
+  (let ((locks (db-wrapper-locks db))
+        (wrapped-db (db-wrapper-db db)))
+    (setf (db-wrapper-locks db) nil)
+    (dolist (key.lock locks)
+      (ignore-errors
+        (db-unlock wrapped-db (cdr key.lock)))))
   nil)
 
 ;; This sure conses a lot. May need to fix that at some point.
@@ -406,12 +413,6 @@
                         (incf cnt))))))))
       (do-dir-cell (cddr (db-wrapper-dirs db)) nil))
     (rollback-db-wrapper db)
-    (let ((locks (db-wrapper-locks db))
-          (wrapped-db (db-wrapper-db db)))
-      (setf (db-wrapper-locks db) nil)
-      (dolist (key.lock locks)
-        (ignore-errors
-          (db-unlock wrapped-db (cdr key.lock)))))
     cnt))
 
 ;; db-wrapper locking. All locks held until commit
@@ -424,6 +425,12 @@
 (defmethod db-unlock ((db db-wrapper) lock)
   (declare (ignore lock)))
 
+(defun copy-db-wrapper (db)
+  (check-type db db-wrapper)
+  (make-instance 'db-wrapper
+                 :db (db-wrapper-db db)
+                 :dirs (copy-tree (db-wrapper-dirs db))))
+
 (defmacro with-db-wrapper ((db &optional (db-form db)) &body body)
   (check-type db symbol)
   (let ((thunk (gensym "THUNK")))
@@ -432,11 +439,16 @@
        (call-with-db-wrapper #',thunk ,db-form))))
 
 (defun call-with-db-wrapper (thunk db)
-  (let ((db (make-db-wrapper db)))
-    (multiple-value-prog1
-        (funcall thunk db)
-    ;; Non-local exit causes commit to be skipped.
-      (commit-db-wrapper db))))
+  (let ((db (make-db-wrapper db))
+        (done-p nil))
+    (unwind-protect
+         (multiple-value-prog1
+             (funcall thunk db)
+           ;; Non-local exit causes commit to be skipped.
+           (commit-db-wrapper db)
+           (setf done-p t))
+      (unless done-p
+        (rollback-db-wrapper db)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
