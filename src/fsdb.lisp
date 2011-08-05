@@ -17,11 +17,13 @@
   (error "Unimplemented db method: ~s" gf))
 
 (defgeneric db-get (db key &rest more-keys)
+  "Return a string read from the file at the offset KEY/MORE-KEYS... from DB's DIR."
   (:method ((db base-fsdb) key &rest more-keys)
     (declare (ignore key more-keys))
     (unimplemented-db-method 'db-get)))
 
 (defgeneric (setf db-get) (value db key &rest more-keys)
+  "Write VALUE, which must be a string, to the file at the offset KEY/MORE-KEYS... from DB's DIR."
   (:method (value (db base-fsdb) key &rest more-keys)
     (declare (ignore value key more-keys))
     (unimplemented-db-method '(setf db-get))))
@@ -40,6 +42,10 @@
     (unimplemented-db-method 'db-unlock)))
 
 (defgeneric db-contents (db &rest keys)
+"Return a list of the names of all the files and directories at the offets KEYS... from DB's DIR.
+No paths will be in that list. 
+Just strings naming the individual files and sub-directories. 
+No indication is made of whether an element of the list is a file or a directory."
   (:method ((db base-fsdb) &rest keys)
     (declare (ignore keys))
     (unimplemented-db-method 'db-contents)))
@@ -50,6 +56,8 @@
     (unimplemented-db-method 'db-subdir)))
 
 (defgeneric db-dir-p (db &rest keys)
+  "Return true if there is a file or directory at path KEYS... from DB's DIR and
+the thing found is a directory."
   (:method ((db base-fsdb) &rest keys)
     (declare (ignore keys))
     (unimplemented-db-method 'db-dir-p)))
@@ -60,7 +68,9 @@
 
 (defun make-fsdb (dir &key (external-format :default))
   "Create instance of class FSDB for the given file system directory DIR.
-EXTERNAL-FORMAT identifies io format. Default is :default."
+DIR should be a path to a filesystem directory.
+EXTERNAL-FORMAT identifies an io format to be used for all the
+file opens. Default is :default."
   (make-instance 'fsdb 
                  :dir dir 
                  :external-format external-format))
