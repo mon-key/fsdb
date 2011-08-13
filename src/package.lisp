@@ -10,6 +10,7 @@
 (cl:defpackage :fsdb
   (:use :cl)
   (:export
+   ;;
    ;; file-locks.lisp
    #:file-lock
    #:grab-file-lock
@@ -27,6 +28,7 @@
    #:fsdb
    #:db-put
    #:db-get
+   #:db-probe
    #:with-db-lock
    #:db-lock
    #:db-unlock
@@ -35,6 +37,7 @@
    #:db-dir-p
    #:append-db-keys
    #:%append-db-keys
+   #:db-filename
    #:with-fsdb-filename
    #:with-read-locked-fsdb
    #:with-write-locked-fsdb

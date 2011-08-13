@@ -5,7 +5,7 @@
 ;;; FSDB -- File System Database
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+;; 
 (in-package :fsdb)
 
 ;; All put/get database implementations should extend class FSDB:BASE-FSDB.
@@ -28,8 +28,13 @@
     (declare (ignore value key more-keys))
     (unimplemented-db-method '(setf db-get))))
 
-(defun db-put (db key value)
-  (setf (db-get db key) value))
+(defgeneric db-put (db key value)
+  (:method ((db base-fsdb) key value)
+    (declare (ignore key value ))
+    (unimplemented-db-method 'db-put)))
+
+;; (defun db-put (db key value)
+;;   (setf (db-get db key) value))
 
 (defgeneric db-lock (db key)
   (:method ((db base-fsdb) key)
@@ -40,6 +45,11 @@
   (:method ((db base-fsdb) lock)
     (declare (ignore lock))
     (unimplemented-db-method 'db-unlock)))
+
+(defgeneric db-filename (db key)
+  (:method ((db base-fsdb) key)
+    (declare (ignore key))
+    (unimplemented-db-method 'db-filename)))
 
 (defgeneric db-contents (db &rest keys)
 "Return a list of the names of all the files and directories at the offets KEYS... from DB's DIR.
@@ -74,7 +84,6 @@ file opens. Default is :default."
   (make-instance 'fsdb 
                  :dir dir 
                  :external-format external-format))
-
 
 (defclass fsdb (base-fsdb)
   ((dir :initarg :dir
@@ -142,7 +151,7 @@ file opens. Default is :default."
   (%append-db-keys key more-keys))
 
 ;; :NOTE `db-get' invokes `file-get-contents'/`file-put-contents' both of which
-;; are currently default their stream-external-format with:
+;; currently default their stream-external-format with:
 ;; :EXTERNAL-FORMAT :UTF-8 
 ;;
 ;; Are there any situtations where this isn't desirable? 
@@ -162,6 +171,23 @@ file opens. Default is :default."
       (if (or (null value) (equal value ""))
           (when (probe-file filename) (delete-file filename))
           (file-put-contents filename value (fsdb-external-format db))))))
+
+(defmethod db-put ((db fsdb) key value)
+  (setf (db-get db key) value))
+
+;; :NOTE Added guard around `wild-pathname-p'. On SBCL we wind indirecting
+;; through two more functions before failing when trying to stat what can't be
+;; stat'd. So lets just bail now instead.  This sort of check might just as well
+;; occur elsewhere futher up in the call chain around `db-filename' and/or
+;; `normalize-key' and might otherwise benefit by abstracting to a dedicated
+;; functon.  Likewise, see SB-IMPL::QUERY-FILE-SYSTEM.
+(defmethod db-probe ((db fsdb) key &rest more-keys)
+  (declare (dynamic-extent more-keys))
+  (let ((key (%append-db-keys key more-keys)))
+    (with-fsdb-filename (db filename key)
+      (if (wild-pathname-p filename) 
+          (error "filename is `cl:wild-pathname-p', got: ~S" filename)
+          (probe-file filename)))))
 
 (defmethod db-lock ((db fsdb) key)
   (grab-file-lock (db-filename db key)))
@@ -379,6 +405,9 @@ file opens. Default is :default."
     (setf value nil))
   (let ((cell (get-db-wrapper-cell db key more-keys :create-p t)))
     (setf (cdr cell) value)))
+
+(defmethod db-put ((db db-wrapper) key value)
+  (setf (db-get db key) value))
 
 (defmethod db-contents ((db db-wrapper) &rest keys)
   (declare (dynamic-extent keys))
